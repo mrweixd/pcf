@@ -84,7 +84,6 @@ type Configuration struct {
 	ServiceList     []Service      `yaml:"serviceList,omitempty" valid:"required"`
 	Mongodb         *Mongodb       `yaml:"mongodb" valid:"required"`
 	Locality        string         `yaml:"locality,omitempty" valid:"-"`
-	NrfNfInstanceId string `yaml:"nrfNfInstanceId,omitempty" valid:"optional,uuidv4"`
 }
 
 type Logger struct {
