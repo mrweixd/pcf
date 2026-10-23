@@ -81,7 +81,7 @@ func (s *nnrfService) SendSearchNFInstances(
 	// Set client and set url
 	client := s.getNFDiscClient(nrfUri)
 
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.Nrf_NFMgmt_ServiceName_NNRF_DISC, models.Nrf_NFMgmt_NFType_NRF)
+	ctx, _, err := s.consumer.Context().GetTokenCtxForNRF(models.Nrf_NFMgmt_ServiceName_NNRF_DISC)
 	if err != nil {
 		return nil, err
 	}
@@ -249,9 +249,8 @@ func (s *nnrfService) SendRegisterNFInstance(ctx context.Context) (
 						logger.MainLog.Infoln("OAuth2 setting receive from NRF:", oauth2)
 					}
 				}
-				pcf_context.GetSelf().OAuth2Required = oauth2
-				if oauth2 && pcf_context.GetSelf().NrfCertPem == "" {
-					logger.CfgLog.Error("OAuth2 enable but no nrfCertPem provided in config.")
+				if oauthErr := pcf_context.GetSelf().SetOAuth2Required(oauth2); oauthErr != nil {
+					return "", "", oauthErr
 				}
 
 				finish = true
@@ -265,7 +264,7 @@ func (s *nnrfService) SendRegisterNFInstance(ctx context.Context) (
 func (s *nnrfService) SendDeregisterNFInstance() (problemDetails *models.ProblemDetails, err error) {
 	logger.ConsumerLog.Infof("Send Deregister NFInstance")
 
-	ctx, pd, err := pcf_context.GetSelf().GetTokenCtx(models.Nrf_NFMgmt_ServiceName_NNRF_NFM, models.Nrf_NFMgmt_NFType_NRF)
+	ctx, pd, err := pcf_context.GetSelf().GetTokenCtxForNRF(models.Nrf_NFMgmt_ServiceName_NNRF_NFM)
 	if err != nil {
 		return pd, err
 	}
