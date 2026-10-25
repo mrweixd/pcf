@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +22,8 @@ import (
 )
 
 type PCFContext struct {
+	// OAuthHTTPClient is configured at startup and must not be mutated after use.
+	OAuthHTTPClient *http.Client
 	NfId            string
 	Name            string
 	UriScheme       models.UriScheme
@@ -482,7 +485,7 @@ func (c *PCFContext) tokenRequest(serviceName models.Nrf_NFMgmt_ServiceName,
 ) oauth.TokenRequest {
 	return oauth.TokenRequest{
 		ConsumerNFType: models.Nrf_NFMgmt_NFType_PCF, ConsumerNFInstanceID: c.NfId,
-		TargetNFType: targetNF, NRFURI: c.NrfUri, Scope: string(serviceName),
+		TargetNFType: targetNF, NRFURI: c.NrfUri, Scope: string(serviceName), HTTPClient: c.OAuthHTTPClient,
 	}
 }
 

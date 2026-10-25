@@ -74,6 +74,10 @@ func NewApp(
 	}
 	pcf.processor = p
 
+	if pcf.pcfCtx.OAuthHTTPClient, err = cfg.NewOAuthHTTPClient(); err != nil {
+		return nil, err
+	}
+
 	if pcf.sbiServer, err = sbi.NewServer(pcf, tlsKeyLogPath); err != nil {
 		return nil, err
 	}
