@@ -1128,12 +1128,18 @@ func (p *Processor) SendAppSessionTermination(
 	uri := appSession.AppSessionContext.AscReqData.NotifUri
 
 	if uri != "" {
+		request.ResUri = util.GetResourceUri(models.Nrf_NFMgmt_ServiceName_NPCF_POLICYAUTHORIZATION, appSession.AppSessionId)
+		if isNEFTerminationURI(uri) {
+			if err := p.sendNEFTermination(uri, &request); err != nil {
+				logger.PolicyAuthLog.Warnf("NEF termination callback failed: %v", err)
+			}
+			return
+		}
 		ctx, _, err := p.Context().GetTokenCtx(models.Nrf_NFMgmt_ServiceName_NPCF_POLICYAUTHORIZATION, models.Nrf_NFMgmt_NFType_PCF) //nolint:lll
 		if err != nil {
 			return
 		}
 
-		request.ResUri = util.GetResourceUri(models.Nrf_NFMgmt_ServiceName_NPCF_POLICYAUTHORIZATION, appSession.AppSessionId)
 		client := util.GetNpcfPolicyAuthorizationCallbackClient()
 		req := PolAuth.PostAppSessionsTerminationRequestRequest{
 			RequestBody: &request,
