@@ -1121,42 +1121,22 @@ func (p *Processor) SendAppSessionTermination(
 	appSession *pcf_context.AppSessionData, request models.Pcf_PolAuth_TerminationInfo,
 ) {
 	logger.PolicyAuthLog.Tracef("Send App Session Termination")
-	if appSession == nil {
-		logger.PolicyAuthLog.Warnln("Send App Session Termination Error[appSession is nil]")
+	if appSession == nil || appSession.AppSessionContext == nil || appSession.AppSessionContext.AscReqData == nil {
 		return
 	}
 	uri := appSession.AppSessionContext.AscReqData.NotifUri
-
-	if uri != "" {
-		request.ResUri = util.GetResourceUri(models.Nrf_NFMgmt_ServiceName_NPCF_POLICYAUTHORIZATION, appSession.AppSessionId)
-		if isNEFTerminationURI(uri) {
-			if err := p.sendNEFTermination(uri, &request); err != nil {
-				logger.PolicyAuthLog.Warnf("NEF termination callback failed: %v", err)
-			}
-			return
-		}
-		ctx, _, err := p.Context().GetTokenCtx(models.Nrf_NFMgmt_ServiceName_NPCF_POLICYAUTHORIZATION, models.Nrf_NFMgmt_NFType_PCF) //nolint:lll
-		if err != nil {
-			return
-		}
-
-		client := util.GetNpcfPolicyAuthorizationCallbackClient()
-		req := PolAuth.PostAppSessionsTerminationRequestRequest{
-			RequestBody: &request,
-		}
-		rsp, err := client.ApplicationSessionsCollectionApi.PostAppSessionsTerminationRequest(
-			ctx, uri, &req)
-		if err != nil {
-			if rsp != nil {
-				logger.PolicyAuthLog.Warnf("Send App Session Termination Error")
-			} else {
-				logger.PolicyAuthLog.Warnf("Send App Session Termination Failed[%s]", err.Error())
-			}
-			return
-		} else if rsp == nil {
-			logger.PolicyAuthLog.Warnln("Send App Session Termination Failed[HTTP Response is nil]")
-			return
-		}
+	if uri == "" {
+		return
+	}
+	// Pre-upgrade sessions can contain the external AF URL. A stored URL is
+	// not evidence of ownership; do not send or obtain credentials on fallback.
+	if !isNEFTerminationURI(uri) {
+		logger.PolicyAuthLog.Warn("Skipped termination callback without a verifiable NEF destination")
+		return
+	}
+	request.ResUri = util.GetResourceUri(models.Nrf_NFMgmt_ServiceName_NPCF_POLICYAUTHORIZATION, appSession.AppSessionId)
+	if err := p.sendNEFTermination(uri, &request); err != nil {
+		logger.PolicyAuthLog.Warnf("NEF termination callback failed: %v", err)
 	}
 }
 

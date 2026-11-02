@@ -3,9 +3,11 @@ package processor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -123,9 +125,66 @@ func TestPCFTerminationInteropClient(t *testing.T) {
 	p, err := NewProcessor(app)
 	require.NoError(t, err)
 	uri := os.Getenv("INTEROP_CALLBACK")
-	require.True(t, isNEFTerminationURI(uri))
-	require.NoError(t, p.sendNEFTermination(uri, &models.Pcf_PolAuth_TerminationInfo{
-		ResUri:    os.Getenv("INTEROP_RESOURCE"),
+	resource := os.Getenv("INTEROP_RESOURCE")
+	base, id, ok := strings.Cut(resource, "/app-sessions/")
+	require.True(t, ok)
+	require.NotEmpty(t, id)
+	self := nfctx.GetSelf()
+	old := self.PcfServiceUris
+	self.PcfServiceUris = map[models.Nrf_NFMgmt_ServiceName]string{
+		models.Nrf_NFMgmt_ServiceName_NPCF_POLICYAUTHORIZATION: base,
+	}
+	t.Cleanup(func() { self.PcfServiceUris = old })
+	// The paired NEF test checks that its handler actually removed the subscription.
+	p.SendAppSessionTermination(&nfctx.AppSessionData{
+		AppSessionId: id, AppSessionContext: &models.Pcf_PolAuth_AppSessionContext{
+			AscReqData: &models.Pcf_PolAuth_AppSessionContextReqData{NotifUri: uri},
+		},
+	}, models.Pcf_PolAuth_TerminationInfo{
 		TermCause: models.Pcf_PolAuth_TerminationCause_PDU_SESSION_TERMINATION,
-	}))
+	})
+}
+
+// Exercise the public termination dispatcher: older NEFs stored the AF URL
+// directly, so the path does not contain the new NEF callback marker.
+func TestLegacyTerminationEgress(t *testing.T) {
+	const sid = "imsi-001010000000001-1"
+	const base = "https://pcf.internal/npcf-policyauthorization/v1"
+	self := nfctx.GetSelf()
+	old := self.PcfServiceUris
+	self.PcfServiceUris = map[models.Nrf_NFMgmt_ServiceName]string{
+		models.Nrf_NFMgmt_ServiceName_NPCF_POLICYAUTHORIZATION: base,
+	}
+	t.Cleanup(func() { self.PcfServiceUris = old })
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("oauth_%t", enabled), func(t *testing.T) {
+			var hits, tokens atomic.Int32
+			af := terminationTestH2(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				var info models.Pcf_PolAuth_TerminationInfo
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&info))
+				t.Logf("fixture received path=%s resUri=%s bearer=%t", r.URL.Path, info.ResUri,
+					r.Header.Get("Authorization") == "Bearer fixture-only")
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			nrf := terminationTestH2(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				tokens.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"access_token": "fixture-only", "token_type": "Bearer", "expires_in": 60,
+				}))
+			}))
+			app := &terminationPCF{nf: &nfctx.PCFContext{OAuth2Required: enabled, NfId: uuid.NewString(), NrfUri: nrf.URL}}
+			p, err := NewProcessor(app)
+			require.NoError(t, err)
+			session := &nfctx.AppSessionData{AppSessionId: sid, AppSessionContext: &models.Pcf_PolAuth_AppSessionContext{
+				AscReqData: &models.Pcf_PolAuth_AppSessionContextReqData{NotifUri: af.URL + "/old-callback"},
+			}}
+			p.SendAppSessionTermination(session, models.Pcf_PolAuth_TerminationInfo{
+				TermCause: models.Pcf_PolAuth_TerminationCause_PDU_SESSION_TERMINATION,
+			})
+			assert.Zero(t, hits.Load(), "external receiver must not receive termination")
+			assert.Zero(t, tokens.Load(), "untrusted destination must not trigger token acquisition")
+		})
+	}
 }
