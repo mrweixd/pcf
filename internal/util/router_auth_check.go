@@ -1,7 +1,8 @@
 package util
 
 import (
-
+	"fmt"
+	"github.com/free5gc/pcf/pkg/factory"
 	"github.com/gin-gonic/gin"
 
 	"github.com/free5gc/openapi/models"
@@ -24,7 +25,11 @@ func (rac *RouterAuthorizationCheck) Check(c *gin.Context, pcfContext pcf_contex
 	err := pcfContext.AuthorizationCheck(token, rac.serviceName)
 	if err != nil {
 		logger.UtilLog.Debugf("RouterAuthorizationCheck::Check Unauthorized: %s", err)
-		status, challenge, reason := oauthChallenge(c.Request, string(rac.serviceName), token, err)
+		baseURI := "http://localhost"
+		if factory.PcfConfig != nil && factory.PcfConfig.Configuration != nil && factory.PcfConfig.Configuration.Sbi != nil {
+			baseURI = fmt.Sprintf("%s://%s:%d", factory.PcfConfig.GetSbiScheme(), factory.PcfConfig.Configuration.Sbi.RegisterIPv4, factory.PcfConfig.GetSbiPort())
+		}
+		status, challenge, reason := oauthChallenge(c.Request, string(rac.serviceName), token, err, baseURI)
 		c.Header("WWW-Authenticate", challenge)
 		c.JSON(status, gin.H{"error": reason})
 		c.Abort()
