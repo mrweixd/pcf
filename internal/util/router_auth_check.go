@@ -1,7 +1,6 @@
 package util
 
 import (
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -25,7 +24,9 @@ func (rac *RouterAuthorizationCheck) Check(c *gin.Context, pcfContext pcf_contex
 	err := pcfContext.AuthorizationCheck(token, rac.serviceName)
 	if err != nil {
 		logger.UtilLog.Debugf("RouterAuthorizationCheck::Check Unauthorized: %s", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		status, challenge, reason := oauthChallenge(c.Request, string(rac.serviceName), token, err)
+		c.Header("WWW-Authenticate", challenge)
+		c.JSON(status, gin.H{"error": reason})
 		c.Abort()
 		return
 	}
